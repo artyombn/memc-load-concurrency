@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "Memcached Loader Concurrency"
+version = "0.1.0"
+description = "Reworked memc_load.py to process TSV logs and load them into memcached concurrently"
+authors = ["artyombn <balabashinan@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "3.12.3"
+protobuf = "^6.30.2"
+python-memcached = "^1.62"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
