@@ -114,7 +114,7 @@ def worker(file, options):
             logging.error("High error rate (%s > %s). Failed load" % (err_rate, NORMAL_ERR_RATE))
         dot_rename(file)
     FINISH_TIME = datetime.now()
-    return processed, errors, START_TIME, FINISH_TIME
+    return processed, errors, file, START_TIME, FINISH_TIME
 
 
 def main(options):
