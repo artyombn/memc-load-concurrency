@@ -33,8 +33,6 @@ def insert_appsinstalled(memc_addr, appsinstalled, dry_run=False):
     key = "%s:%s" % (appsinstalled.dev_type, appsinstalled.dev_id)
     ua.apps.extend(appsinstalled.apps)
     packed = ua.SerializeToString()
-    # @TODO persistent connection
-    # @TODO retry and timeouts!
     try:
         if dry_run:
             logging.debug("%s - %s -> %s" % (memc_addr, key, str(ua).replace("\n", " ")))
@@ -66,16 +64,9 @@ def parse_appsinstalled(line):
     return AppsInstalled(dev_type, dev_id, lat, lon, apps)
 
 
-def worker(file, options):
-    device_memc = {
-        "idfa": options.idfa,
-        "gaid": options.gaid,
-        "adid": options.adid,
-        "dvid": options.dvid,
-    }
-
+def worker(file, device_memc, dry_run, max_workers):
     processed = errors = 0
-    START_TIME = datetime.now()
+    start_time = datetime.now()
     logging.info('Processing %s' % file)
 
     try:
@@ -96,7 +87,7 @@ def worker(file, options):
                     errors += 1
                     logging.error("Unknow device type: %s" % appsinstalled.dev_type)
                     continue
-                ok = insert_appsinstalled(memc_addr, appsinstalled, options.dry)
+                ok = insert_appsinstalled(memc_addr, appsinstalled, dry_run)
                 if ok:
                     processed += 1
                 else:
@@ -113,39 +104,45 @@ def worker(file, options):
         else:
             logging.error("High error rate (%s > %s). Failed load" % (err_rate, NORMAL_ERR_RATE))
         dot_rename(file)
-    FINISH_TIME = datetime.now()
-    return processed, errors, file, START_TIME, FINISH_TIME
+
+    finish_time = datetime.now()
+    return file, processed, errors, start_time, finish_time
 
 
 def main(options):
-    # Sorting files
-    files = sorted(glob.iglob(options.pattern))
-    EX_TIMES = {}
+    device_memc = {
+        "idfa": options.idfa,
+        "gaid": options.gaid,
+        "adid": options.adid,
+        "dvid": options.dvid,
+    }
 
+    files = sorted(glob.glob(options.pattern))
     if not files:
         logging.warning("No files found matching pattern %s" % options.pattern)
         return
 
+    total_processed = total_errors = 0
     max_workers = len(files)
+    start_time = datetime.now()
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(worker, file, options) for file in files]
+        futures = {executor.submit(worker, file, device_memc, options.dry, max_workers): file for file in files}
         for future in futures:
             try:
-                processed, errors, file, start_time, finish_time = future.result()
-                EX_TIMES[file] = {
-                    'start': start_time,
-                    'finish': finish_time,
-                }
+                file, processed, errors, start_time, finish_time = future.result()
+                total_processed += processed
+                total_errors += errors
                 logging.info(f"Finished processing {future}: "
                              f"processed={processed}, "
                              f"errors={errors}, "
                              f"execution time: {(finish_time - start_time).total_seconds()} sec")
             except Exception as e:
                 logging.error(f"Error in processing {future}: {e}")
-    all_times = [v for item in EX_TIMES.values() for v in item.values()]
-    min_time = min(all_times)
-    max_time = max(all_times)
-    logging.info(f"Total execution time: {(max_time - min_time).total_seconds()} sec")
+
+    end_time = datetime.now()
+    total_time = (end_time - start_time).total_seconds()
+    logging.info(f"Total processed: {total_processed}, total errors: {total_errors}, total execution time: {total_time} sec")
 
 def prototest():
     sample = "idfa\t1rfw452y52g2gq4g\t55.55\t42.42\t1423,43,567,3,7,23\ngaid\t7rfw452y52g2gq4g\t55.55\t42.42\t7423,424"

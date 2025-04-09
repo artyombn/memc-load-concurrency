@@ -32,8 +32,6 @@ def insert_appsinstalled(memc_addr, appsinstalled, dry_run=False):
     key = "%s:%s" % (appsinstalled.dev_type, appsinstalled.dev_id)
     ua.apps.extend(appsinstalled.apps)
     packed = ua.SerializeToString()
-    # @TODO persistent connection
-    # @TODO retry and timeouts!
     try:
         if dry_run:
             logging.debug("%s - %s -> %s" % (memc_addr, key, str(ua).replace("\n", " ")))
@@ -73,50 +71,55 @@ def main(options):
         "dvid": options.dvid,
     }
 
-    total_time = 0
+    start_time = datetime.now()
+    total_processed = total_errors = 0
 
-    for fn in glob.iglob(options.pattern):
+    for fn in sorted(glob.iglob(options.pattern)):
         processed = errors = 0
         logging.info('Processing %s' % fn)
-        fd = gzip.open(fn, 'rt')
-        start_time = datetime.now()
-        for line in fd:
-        # for i, line in enumerate(fd):
-        #     if i >= 1000:
-        #         break
-            line = line.strip()
-            if not line:
-                continue
-            appsinstalled = parse_appsinstalled(line)
-            if not appsinstalled:
-                errors += 1
-                continue
-            memc_addr = device_memc.get(appsinstalled.dev_type)
-            if not memc_addr:
-                errors += 1
-                logging.error("Unknow device type: %s" % appsinstalled.dev_type)
-                continue
-            ok = insert_appsinstalled(memc_addr, appsinstalled, options.dry)
-            if ok:
-                processed += 1
-            else:
-                errors += 1
+        try:
+            with gzip.open(fn, 'rt') as fd:
+                for line in fd:
+                # for i, line in enumerate(fd):
+                #     if i >= 1000:
+                #         break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    appsinstalled = parse_appsinstalled(line)
+                    if not appsinstalled:
+                        errors += 1
+                        continue
+                    memc_addr = device_memc.get(appsinstalled.dev_type)
+                    if not memc_addr:
+                        errors += 1
+                        logging.error("Unknow device type: %s" % appsinstalled.dev_type)
+                        continue
+                    ok = insert_appsinstalled(memc_addr, appsinstalled, options.dry)
+                    if ok:
+                        processed += 1
+                    else:
+                        errors += 1
+        except Exception as e:
+            logging.error(f"Error processing file {fn}: {e}")
+            continue
+
         if not processed:
-            fd.close()
             dot_rename(fn)
             continue
 
-        finish_time = datetime.now()
         err_rate = float(errors) / processed
         if err_rate < NORMAL_ERR_RATE:
-            logging.info(f"Acceptable error rate ({err_rate}). Successfull load, execution time: {(finish_time - start_time).total_seconds()} sec")
+            logging.info(f"Acceptable error rate ({err_rate}). Successfull load")
         else:
             logging.error("High error rate (%s > %s). Failed load" % (err_rate, NORMAL_ERR_RATE))
-        fd.close()
         dot_rename(fn)
-        total_time += (finish_time - start_time).total_seconds()
+        total_processed += processed
+        total_errors += errors
 
-    logging.info(f"Total execution time: {total_time}")
+    end_time = datetime.now()
+    total_time = (end_time - start_time).total_seconds()
+    logging.info(f"Total processed: {total_processed}, total errors: {total_errors}, total execution time: {total_time} sec")
 
 
 def prototest():
