@@ -73,6 +73,7 @@ def worker(file, options):
         "adid": options.adid,
         "dvid": options.dvid,
     }
+
     processed = errors = 0
     START_TIME = datetime.now()
     logging.info('Processing %s' % file)
@@ -119,27 +120,32 @@ def worker(file, options):
 def main(options):
     # Sorting files
     files = sorted(glob.iglob(options.pattern))
-    times = []
+    EX_TIMES = {}
 
     if not files:
         logging.warning("No files found matching pattern %s" % options.pattern)
         return
 
-    max_workers = 5
+    max_workers = len(files)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(worker, file, options) for file in files]
         for future in futures:
             try:
-                processed, errors, start_time, finish_time = future.result()
-                times.append((finish_time - start_time).total_seconds())
+                processed, errors, file, start_time, finish_time = future.result()
+                EX_TIMES[file] = {
+                    'start': start_time,
+                    'finish': finish_time,
+                }
                 logging.info(f"Finished processing {future}: "
                              f"processed={processed}, "
                              f"errors={errors}, "
                              f"execution time: {(finish_time - start_time).total_seconds()} sec")
             except Exception as e:
                 logging.error(f"Error in processing {future}: {e}")
-
-    logging.info(f"Total execution time: {max(times)}")
+    all_times = [v for item in EX_TIMES.values() for v in item.values()]
+    min_time = min(all_times)
+    max_time = max(all_times)
+    logging.info(f"Total execution time: {(max_time - min_time).total_seconds()} sec")
 
 def prototest():
     sample = "idfa\t1rfw452y52g2gq4g\t55.55\t42.42\t1423,43,567,3,7,23\ngaid\t7rfw452y52g2gq4g\t55.55\t42.42\t7423,424"
