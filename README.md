@@ -4,10 +4,14 @@
 
 ### Run Examples
 #### Single-threaded version:
-`python memc_load.py --pattern "logs/*.tsv.gz" --dry --log "logs/memc_load_single.log"`
+```shell
+python memc_load.py --pattern "logs/*.tsv.gz" --dry --log "logs/memc_load_single.log"
+```
 
 #### Multi-threaded version:
-`python memc_load_concurrency.py --pattern "logs/*.tsv.gz" --dry --log "logs/memc_load_concurrency.log"`  
+```shell
+python memc_load_concurrency.py --pattern "logs/*.tsv.gz" --dry --log "logs/memc_load_concurrency.log"
+```
 
 #### Options Parser:
 ```
@@ -30,8 +34,9 @@ gaid 3261cf44cbe6a00839c574336fdf49f6 137.790839567 56.8403675248 7462,1115,5205
 ...
 ...
 [2025.04.09 20:49:30] I Acceptable error rate (0.0). Successfull load
-[2025.04.09 20:49:30] I Finished processing <Future at 0x102fb21b0 state=finished returned tuple>: processed=3424477, errors=0, execution time: 906.517274 sec
-[2025.04.09 20:49:30] I Total execution time: 906.517274
+[2025.04.09 20:49:30] I Finished processing <Future at 0x102fb21b0 state=finished returned tuple>: processed=3424477, errors=0, execution time: 908.250699 sec
+[2025.04.09 20:49:30] I Finished processing <Future at 0x104cb2750 state=finished returned tuple>: processed=3422026, errors=0, execution time: 907.898631 sec
+[2025.04.09 20:49:30] I Total processed: 10269498, total errors: 0, total execution time: 908.25071 sec
 ```
 
 #### Links to Test Files
