@@ -7,6 +7,7 @@ import glob
 import logging
 import collections
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from optparse import OptionParser
 # brew install protobuf
 # protoc  --python_out=. ./appsinstalled.proto
@@ -56,7 +57,7 @@ def parse_appsinstalled(line):
     try:
         apps = [int(a.strip()) for a in raw_apps.split(",")]
     except ValueError:
-        apps = [int(a.strip()) for a in raw_apps.split(",") if a.isidigit()]
+        apps = [int(a.strip()) for a in raw_apps.split(",") if a.isdigit()]
         logging.info("Not all user apps are digits: `%s`" % line)
     try:
         lat, lon = float(lat), float(lon)
@@ -73,13 +74,15 @@ def worker(file, options):
         "dvid": options.dvid,
     }
     processed = errors = 0
+    START_TIME = datetime.now()
     logging.info('Processing %s' % file)
 
     try:
         with gzip.open(file, 'rt') as fd:
-            for i, line in enumerate(fd):
-                if i >= 10:
-                    break
+            for line in fd:
+            # for i, line in enumerate(fd):
+            #     if i >= 1000:
+            #         break
                 line = line.strip()
                 if not line:
                     continue
@@ -109,13 +112,14 @@ def worker(file, options):
         else:
             logging.error("High error rate (%s > %s). Failed load" % (err_rate, NORMAL_ERR_RATE))
         dot_rename(file)
-
-    return processed, errors
+    FINISH_TIME = datetime.now()
+    return processed, errors, START_TIME, FINISH_TIME
 
 
 def main(options):
     # Sorting files
     files = sorted(glob.iglob(options.pattern))
+    times = []
 
     if not files:
         logging.warning("No files found matching pattern %s" % options.pattern)
@@ -126,10 +130,16 @@ def main(options):
         futures = [executor.submit(worker, file, options) for file in files]
         for future in futures:
             try:
-                processed, errors = future.result()
-                logging.info(f"Finished processing {future}: processed={processed}, errors={errors}")
+                processed, errors, start_time, finish_time = future.result()
+                times.append((finish_time - start_time).total_seconds())
+                logging.info(f"Finished processing {future}: "
+                             f"processed={processed}, "
+                             f"errors={errors}, "
+                             f"execution time: {(finish_time - start_time).total_seconds()} sec")
             except Exception as e:
                 logging.error(f"Error in processing {future}: {e}")
+
+    logging.info(f"Total execution time: {max(times)}")
 
 def prototest():
     sample = "idfa\t1rfw452y52g2gq4g\t55.55\t42.42\t1423,43,567,3,7,23\ngaid\t7rfw452y52g2gq4g\t55.55\t42.42\t7423,424"

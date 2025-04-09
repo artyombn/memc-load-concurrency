@@ -6,6 +6,7 @@ import sys
 import glob
 import logging
 import collections
+from datetime import datetime
 from optparse import OptionParser
 # brew install protobuf
 # protoc  --python_out=. ./appsinstalled.proto
@@ -71,11 +72,18 @@ def main(options):
         "adid": options.adid,
         "dvid": options.dvid,
     }
+
+    total_time = 0
+
     for fn in glob.iglob(options.pattern):
         processed = errors = 0
         logging.info('Processing %s' % fn)
-        fd = gzip.open(fn)
+        fd = gzip.open(fn, 'rt')
+        start_time = datetime.now()
         for line in fd:
+        # for i, line in enumerate(fd):
+        #     if i >= 1000:
+        #         break
             line = line.strip()
             if not line:
                 continue
@@ -98,13 +106,17 @@ def main(options):
             dot_rename(fn)
             continue
 
+        finish_time = datetime.now()
         err_rate = float(errors) / processed
         if err_rate < NORMAL_ERR_RATE:
-            logging.info("Acceptable error rate (%s). Successfull load" % err_rate)
+            logging.info(f"Acceptable error rate ({err_rate}). Successfull load, execution time: {(finish_time - start_time).total_seconds()} sec")
         else:
             logging.error("High error rate (%s > %s). Failed load" % (err_rate, NORMAL_ERR_RATE))
         fd.close()
         dot_rename(fn)
+        total_time += (finish_time - start_time).total_seconds()
+
+    logging.info(f"Total execution time: {total_time}")
 
 
 def prototest():
@@ -128,7 +140,7 @@ if __name__ == '__main__':
     op.add_option("-t", "--test", action="store_true", default=False)
     op.add_option("-l", "--log", action="store", default=None)
     op.add_option("--dry", action="store_true", default=False)
-    op.add_option("--pattern", action="store", default="/data/appsinstalled/*.tsv.gz")
+    op.add_option("--pattern", action="store", default="/logs/*.tsv.gz")
     op.add_option("--idfa", action="store", default="127.0.0.1:33013")
     op.add_option("--gaid", action="store", default="127.0.0.1:33014")
     op.add_option("--adid", action="store", default="127.0.0.1:33015")
