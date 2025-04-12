@@ -17,6 +17,7 @@ import appsinstalled_pb2
 import memcache
 
 NORMAL_ERR_RATE = 0.01
+BATCH_SIZE = 1000  # for set_multi
 AppsInstalled = collections.namedtuple("AppsInstalled", ["dev_type", "dev_id", "lat", "lon", "apps"])
 
 
@@ -26,24 +27,27 @@ def dot_rename(path):
     os.rename(path, os.path.join(head, "." + fn))
 
 
-def insert_appsinstalled(memc_addr, appsinstalled, dry_run=False):
-    ua = appsinstalled_pb2.UserApps()
-    ua.lat = appsinstalled.lat
-    ua.lon = appsinstalled.lon
-    key = "%s:%s" % (appsinstalled.dev_type, appsinstalled.dev_id)
-    ua.apps.extend(appsinstalled.apps)
-    packed = ua.SerializeToString()
+def insert_appsinstalled(memc, batch, dry_run=False):
+    data = {}
+    for appinst in batch:
+        ua = appsinstalled_pb2.UserApps()
+        ua.lat = appinst.lat
+        ua.lon = appinst.lon
+        key = "%s:%s" % (appinst.dev_type, appinst.dev_id)
+        ua.apps.extend(appinst.apps)
+        packed = ua.SerializeToString()
+        data[key] = packed
     try:
         if dry_run:
-            logging.debug("%s - %s -> %s" % (memc_addr, key, str(ua).replace("\n", " ")))
+            logging.debug("%s - %s -> %s" % (memc.servers[0], key, packed))
+            return True, len(batch)
         else:
-            memc = memcache.Client([memc_addr])
-            memc.set(key, packed)
+            if not memc.set_multi(data):
+                return False, len(batch)
+            return True, len(batch)
     except Exception as e:
-        logging.exception("Cannot write to memc %s: %s" % (memc_addr, e))
+        logging.exception("Cannot write %s: %s" % (memc.servers[0], e))
         return False
-    return True
-
 
 def parse_appsinstalled(line):
     line_parts = line.strip().split("\t")
@@ -64,16 +68,20 @@ def parse_appsinstalled(line):
     return AppsInstalled(dev_type, dev_id, lat, lon, apps)
 
 
-def worker(file, device_memc, dry_run, max_workers):
+def worker(file, memc_clients, dry_run):
     processed = errors = 0
     start_time = datetime.now()
     logging.info('Processing %s' % file)
 
     try:
+        batch = {
+            dev_type: [] for dev_type in memc_clients
+        }
+
         with gzip.open(file, 'rt') as fd:
             for line in fd:
             # for i, line in enumerate(fd):
-            #     if i >= 1000:
+            #     if i >= 200:
             #         break
                 line = line.strip()
                 if not line:
@@ -82,16 +90,25 @@ def worker(file, device_memc, dry_run, max_workers):
                 if not appsinstalled:
                     errors += 1
                     continue
-                memc_addr = device_memc.get(appsinstalled.dev_type)
-                if not memc_addr:
+                dev_type = appsinstalled.dev_type
+                if dev_type not in memc_clients:
                     errors += 1
-                    logging.error("Unknow device type: %s" % appsinstalled.dev_type)
+                    logging.error("Unknow device type: %s" % dev_type)
                     continue
-                ok = insert_appsinstalled(memc_addr, appsinstalled, dry_run)
-                if ok:
-                    processed += 1
-                else:
-                    errors += 1
+                batch[dev_type].append(appsinstalled)
+
+                if len(batch[dev_type]) >= BATCH_SIZE:
+                    ok, count = insert_appsinstalled(memc_clients[dev_type], batch[dev_type], dry_run)
+                    processed += count if ok else 0
+                    errors += 0 if ok else count
+                    batch[dev_type].clear()
+
+        for dev_type, b in batch.items():
+            if b:
+                ok, count = insert_appsinstalled(memc_clients[dev_type], b, dry_run)
+                processed += count if ok else 0
+                errors += 0 if ok else count
+
     except Exception as e:
         logging.error(f"Error processing file {file}: {e}")
 
@@ -110,11 +127,11 @@ def worker(file, device_memc, dry_run, max_workers):
 
 
 def main(options):
-    device_memc = {
-        "idfa": options.idfa,
-        "gaid": options.gaid,
-        "adid": options.adid,
-        "dvid": options.dvid,
+    memc_clients = {
+        "idfa": memcache.Client([options.idfa]),
+        "gaid": memcache.Client([options.gaid]),
+        "adid": memcache.Client([options.adid]),
+        "dvid": memcache.Client([options.dvid]),
     }
 
     files = sorted(glob.glob(options.pattern))
@@ -127,7 +144,7 @@ def main(options):
     start_time = datetime.now()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(worker, file, device_memc, options.dry, max_workers): file for file in files}
+        futures = {executor.submit(worker, file, memc_clients, options.dry): file for file in files}
         for future in futures:
             try:
                 file, processed, errors, start_time, finish_time = future.result()
