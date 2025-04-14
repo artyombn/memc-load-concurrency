@@ -1,6 +1,9 @@
 # MemcLoad
 ### Reworked memc_load.py to process TSV logs and load them into memcached concurrently
-**The project includes two versions: single-threaded (`memc_load.py`) and multi-threaded (`memc_load_concurrency.py`).**
+#### The project includes three versions:
+* single-threaded (`memc_load.py`)
+* multi-threaded (`memc_load_concurrency.py`)
+* multiprocessing (`memc_load_multiprocessing.py`)
 
 ### Run Examples
 #### Single-threaded version:
